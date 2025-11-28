@@ -532,25 +532,28 @@
 
         async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
+                const constraints = {
                     video: { 
                         facingMode: 'environment',
                         width: { ideal: 1280 },
                         height: { ideal: 720 }
-                    }
-                });
-                camera.srcObject = stream;
-                camera.style.display = 'block';
-                
-                // Attendi che il video sia pronto
-                camera.onloadedmetadata = () => {
-                    camera.play();
-                    cameraControls.classList.add('active');
+                    },
+                    audio: false
                 };
                 
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                camera.srcObject = stream;
+                camera.style.display = 'block';
+                camera.play().catch(err => console.error('Play error:', err));
+                
+                cameraControls.classList.add('active');
                 preview.style.display = 'none';
                 errorMessage.classList.remove('show');
                 hideResult();
+                
+                // Mostra messaggio all'utente
+                showError('📸 Fotocamera aperta. Inquadra il medicinale e clicca "Scatta Foto"');
+                
             } catch (err) {
                 console.error('Camera error:', err);
                 
@@ -584,7 +587,7 @@
         function capturePhoto() {
             // Verifiche di sicurezza
             if (!camera || !camera.videoWidth || !camera.videoHeight) {
-                showError('Errore: Fotocamera non pronta. Riprova.');
+                showError('❌ Errore: Fotocamera non pronta. Riprova.');
                 return;
             }
 
@@ -592,24 +595,29 @@
                 canvas = document.createElement('canvas');
             }
             
-            const ctx = canvas.getContext('2d');
-            canvas.width = camera.videoWidth;
-            canvas.height = camera.videoHeight;
-            
-            // Disegna il frame corrente del video
-            ctx.drawImage(camera, 0, 0);
-            
-            // Interrompi lo stream prima di processare
-            stopCamera();
-            
-            // Converti in blob e analizza
-            canvas.toBlob(blob => {
-                if (blob) {
-                    analyzeImage(blob);
-                } else {
-                    showError('Errore nella cattura della foto. Riprova.');
-                }
-            }, 'image/jpeg', 0.9);
+            try {
+                const ctx = canvas.getContext('2d');
+                canvas.width = camera.videoWidth;
+                canvas.height = camera.videoHeight;
+                
+                // Disegna il frame corrente del video
+                ctx.drawImage(camera, 0, 0);
+                
+                // Interrompi lo stream subito dopo lo scatto
+                stopCamera();
+                
+                // Converti in blob e analizza
+                canvas.toBlob(blob => {
+                    if (blob && blob.size > 0) {
+                        analyzeImage(blob);
+                    } else {
+                        showError('❌ Errore nella cattura della foto. Riprova.');
+                    }
+                }, 'image/jpeg', 0.95);
+            } catch (err) {
+                showError('❌ Errore durante lo scatto: ' + err.message);
+                console.error('Capture error:', err);
+            }
         }
 
         function handleFileUpload(e) {
@@ -638,14 +646,13 @@
                 };
                 reader.readAsDataURL(blob);
 
-                // Simulazione: ricerca nel database locale
-                // In produzione, usare TensorFlow.js o API di riconoscimento immagini
+                // Ricerca nel database locale tramite analisi colori
                 const result = await recognizeFromLocalDB();
                 
                 if (result) {
                     displayResult(result);
                 } else {
-                    showError('Medicinale non riconosciuto. Verificare l\'immagine o consultare il database completo.');
+                    showError('❌ Medicinale non riconosciuto.\n\n💡 Suggerimenti:\n• Inquadra bene il medicinale\n• Assicurati che i colori siano visibili\n• Carica una foto da galleria se la fotocamera non funziona\n\nDatabase: Daflon, Voltaren, Buscofen, Paracetamolo, Ibuprofene, Amoxicillina, Omeprazolo, Metformina, Atorvastatina, Aspirina, Loratadina, Saridon');
                 }
             } catch (err) {
                 showError('Errore nell\'analisi dell\'immagine: ' + err.message);
@@ -661,6 +668,7 @@
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.src = preview.src;
             
             await new Promise(resolve => {
@@ -670,18 +678,33 @@
                     ctx.drawImage(img, 0, 0);
                     resolve();
                 };
+                img.onerror = () => resolve(); // Evita blocchi se l'immagine non carica
             });
 
             // Analizza i pixel per rilevare colori e pattern
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let imageData;
+            try {
+                imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            } catch (err) {
+                // Se CORS fallisce, ritorna null per mostrare errore
+                return null;
+            }
+            
             const data = imageData.data;
-            
             let redCount = 0, blueCount = 0, whiteCount = 0, yellowCount = 0;
+            let totalSamples = 0;
             
-            for (let i = 0; i < data.length; i += 4) {
+            // Campiona ogni 10 pixel per velocità
+            for (let i = 0; i < data.length; i += 40) {
                 const r = data[i];
                 const g = data[i + 1];
                 const b = data[i + 2];
+                const a = data[i + 3];
+                
+                // Ignora pixel trasparenti
+                if (a < 128) continue;
+                
+                totalSamples++;
                 
                 // Conta colori dominanti
                 if (r > 150 && g < 100 && b < 100) redCount++;
@@ -692,21 +715,26 @@
             
             await new Promise(resolve => setTimeout(resolve, 1500));
             
-            // Seleziona medicinale in base ai colori rilevati
-            if (redCount > blueCount && redCount > whiteCount) {
-                return medicineDatabase['voltaren']; // Confezioni rosse tipiche
-            } else if (yellowCount > redCount) {
+            // Se nessun colore dominante rilevato, ritorna null
+            if (totalSamples === 0 || (redCount === 0 && blueCount === 0 && whiteCount === 0 && yellowCount === 0)) {
+                return null;
+            }
+            
+            // Seleziona medicinale solo se ha una percentuale significativa (>25%)
+            const colorThreshold = totalSamples * 0.25;
+            
+            if (redCount > colorThreshold && redCount > blueCount && redCount > whiteCount) {
+                return medicineDatabase['voltaren']; // Confezioni rosse
+            } else if (yellowCount > colorThreshold && yellowCount > redCount) {
                 return medicineDatabase['daflon']; // Daflon è giallo/arancio
-            } else if (blueCount > redCount) {
+            } else if (blueCount > colorThreshold && blueCount > redCount) {
                 return medicineDatabase['buscofen']; // Buscofen è blu
-            } else if (whiteCount > redCount) {
+            } else if (whiteCount > colorThreshold && whiteCount > redCount) {
                 return medicineDatabase['paracetamol']; // Bianche/neutre
             }
             
-            // Default casuale se non riconosce
-            const medicines = Object.keys(medicineDatabase);
-            const randomKey = medicines[Math.floor(Math.random() * medicines.length)];
-            return medicineDatabase[randomKey];
+            // Se nessun colore dominante supera la soglia, ritorna null (non randomico)
+            return null;
         }
 
         function displayResult(medicine) {
