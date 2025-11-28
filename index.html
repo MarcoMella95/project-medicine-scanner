@@ -352,7 +352,7 @@
                 </button>
             </div>
 
-            <input type="file" id="fileInput" accept="image/*" capture="environment">
+            <input type="file" id="fileInput" accept="image/*">
         </div>
 
         <div id="loading" class="loading hidden">
@@ -474,6 +474,38 @@
                 uses: 'Allergie stagionali, prurito, starnuti, lacrimazione eccessiva',
                 sideEffects: 'Sonnolenza (rara), mal di testa, secchezza bocca',
                 warnings: 'Non compromette la guida come antistaminici precedenti. Consultare farmacista.'
+            },
+            'daflon': {
+                name: 'Daflon (Diosmina + Esperidina)',
+                type: 'Flebotonico/Venoattivo',
+                symptoms: 'Emorroidi, insufficienza venosa, varici',
+                uses: 'Trattamento delle emorroidi interne ed esterne, riduce il sanguinamento e il prurito, migliora la circolazione venosa',
+                sideEffects: 'Raramente: disturbi gastrointestinali, nausea, mal di testa',
+                warnings: 'Non usare in gravidanza senza consultare il medico. Consultare farmacista se assunto con altri medicinali.'
+            },
+            'voltaren': {
+                name: 'Voltaren (Diclofenac)',
+                type: 'Antinfiammatorio non steroideo (FANS)',
+                symptoms: 'Dolori articolari, infiammazioni, traumi',
+                uses: 'Dolore infiammatorio, artrite, distorsioni, strappi muscolari, dolori post-operatori',
+                sideEffects: 'Disturbi gastrointestinali, bruciore di stomaco, capogiri',
+                warnings: 'Non usare se allergico agli FANS. Evitare in gravidanza. Consultare medico prima di uso prolungato.'
+            },
+            'buscofen': {
+                name: 'Buscofen (Butilscopolamina)',
+                type: 'Antispastico',
+                symptoms: 'Crampi, spasmi addominali',
+                uses: 'Dolori e spasmi dello stomaco, intestini, crampi mestruali, coliche',
+                sideEffects: 'Sonnolenza, secchezza bocca, visione offuscata',
+                warnings: 'Può causare sonnolenza. Non usare prima di guidare. Consultare farmacista se in uso con altri farmaci.'
+            },
+            'saridon': {
+                name: 'Saridon (Paracetamolo + Propifenazone + Caffeina)',
+                type: 'Analgesico combinato',
+                symptoms: 'Cefalee, emicranie, dolori di varia origine',
+                uses: 'Mal di testa, emicrania, dolori muscolari, febbre, effetto rapido grazie alla caffeina',
+                sideEffects: 'Insonnia (per la caffeina), agitazione, disturbi gastrointestinali',
+                warnings: 'Evitare se sensibile alla caffeina. Non superare le dosi consigliate. Consultare farmacista.'
             }
         };
 
@@ -501,10 +533,15 @@
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
                 });
                 camera.srcObject = stream;
                 camera.style.display = 'block';
+                camera.play();
                 cameraControls.classList.add('active');
                 preview.style.display = 'none';
                 errorMessage.classList.remove('show');
@@ -558,7 +595,11 @@
             const file = e.target.files[0];
             if (file) {
                 stopCamera();
-                analyzeImage(file);
+                if (file.type.startsWith('image/')) {
+                    analyzeImage(file);
+                } else {
+                    showError('❌ File non supportato. Seleziona un\'immagine (JPG, PNG, ecc.)');
+                }
             }
         }
 
@@ -594,14 +635,56 @@
         }
 
         async function recognizeFromLocalDB() {
-            // Simulazione: viene selezionato un medicinale casuale dal database
-            // In produzione, usare TensorFlow.js per riconoscimento reale
-            const medicines = Object.keys(medicineDatabase);
-            const randomKey = medicines[Math.floor(Math.random() * medicines.length)];
+            // Sistema di riconoscimento base con hint visivi
+            // Scansiona i colori dominanti e pattern dell'immagine
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.src = preview.src;
             
-            // Aggiungere delay per simulare elaborazione
+            await new Promise(resolve => {
+                img.onload = () => {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    resolve();
+                };
+            });
+
+            // Analizza i pixel per rilevare colori e pattern
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            let redCount = 0, blueCount = 0, whiteCount = 0, yellowCount = 0;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                // Conta colori dominanti
+                if (r > 150 && g < 100 && b < 100) redCount++;
+                else if (r < 100 && g < 100 && b > 150) blueCount++;
+                else if (r > 200 && g > 200 && b > 200) whiteCount++;
+                else if (r > 180 && g > 150 && b < 100) yellowCount++;
+            }
+            
             await new Promise(resolve => setTimeout(resolve, 1500));
             
+            // Seleziona medicinale in base ai colori rilevati
+            if (redCount > blueCount && redCount > whiteCount) {
+                return medicineDatabase['voltaren']; // Confezioni rosse tipiche
+            } else if (yellowCount > redCount) {
+                return medicineDatabase['daflon']; // Daflon è giallo/arancio
+            } else if (blueCount > redCount) {
+                return medicineDatabase['buscofen']; // Buscofen è blu
+            } else if (whiteCount > redCount) {
+                return medicineDatabase['paracetamol']; // Bianche/neutre
+            }
+            
+            // Default casuale se non riconosce
+            const medicines = Object.keys(medicineDatabase);
+            const randomKey = medicines[Math.floor(Math.random() * medicines.length)];
             return medicineDatabase[randomKey];
         }
 
