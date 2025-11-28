@@ -340,19 +340,9 @@
                 </button>
             </div>
 
-            <video id="camera"></video>
             <img id="preview" alt="Preview immagine">
 
-            <div class="camera-controls" id="cameraControls">
-                <button class="btn btn--primary btn--full-width" id="captureBtn">
-                    📸 Scatta Foto
-                </button>
-                <button class="btn btn--outline btn--full-width" id="cancelCameraBtn">
-                    Annulla
-                </button>
-            </div>
-
-            <input type="file" id="fileInput" accept="image/*">
+            <input type="file" id="fileInput" accept="image/*" capture="environment">
         </div>
 
         <div id="loading" class="loading hidden">
@@ -524,111 +514,16 @@
         let stream = null;
         let canvas = null;
 
-        cameraBtn.addEventListener('click', startCamera);
+        cameraBtn.addEventListener('click', () => fileInput.click());
         uploadBtn.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', handleFileUpload);
-        captureBtn.addEventListener('click', capturePhoto);
-        cancelCameraBtn.addEventListener('click', stopCamera);
-
-        async function startCamera() {
-            try {
-                const constraints = {
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
-                    audio: false
-                };
-                
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                camera.srcObject = stream;
-                camera.style.display = 'block';
-                camera.play().catch(err => console.error('Play error:', err));
-                
-                cameraControls.classList.add('active');
-                preview.style.display = 'none';
-                errorMessage.classList.remove('show');
-                hideResult();
-                
-                // Mostra messaggio all'utente
-                showError('📸 Fotocamera aperta. Inquadra il medicinale e clicca "Scatta Foto"');
-                
-            } catch (err) {
-                console.error('Camera error:', err);
-                
-                let errorMsg = 'Impossibile accedere alla fotocamera.';
-                
-                if (err.name === 'NotAllowedError') {
-                    errorMsg = '❌ PERMESSI NEGATI: Devi consentire l\'accesso alla fotocamera.\n\n';
-                    errorMsg += '📱 SU ANDROID: Vai in Impostazioni > App > [nome browser] > Autorizzazioni > Fotocamera > Attiva\n\n';
-                    errorMsg += '📱 SU iOS: Vai in Impostazioni > Privacy > Fotocamera e abilita il browser\n\n';
-                    errorMsg += 'Dopo aver abilitato, ricarica la pagina e riprova.';
-                } else if (err.name === 'NotFoundError' || err.name === 'NotSupportedError') {
-                    errorMsg = '⚠️ FOTOCAMERA NON DISPONIBILE: Il tuo dispositivo potrebbe non avere una fotocamera.\n\nUsa il pulsante "Carica Foto" per selezionare un\'immagine dalla galleria.';
-                } else if (err.name === 'PermissionDeniedError') {
-                    errorMsg = '❌ PERMESSI NEGATI PERMANENTEMENTE: Devi ripristinare i permessi nelle impostazioni del tuo dispositivo.';
-                }
-                
-                showError(errorMsg);
-            }
-        }
-
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            camera.style.display = 'none';
-            cameraControls.classList.remove('active');
-            preview.style.display = 'none';
-        }
-
-        function capturePhoto() {
-            // Verifiche di sicurezza
-            if (!camera || !camera.videoWidth || !camera.videoHeight) {
-                showError('❌ Errore: Fotocamera non pronta. Riprova.');
-                return;
-            }
-
-            if (!canvas) {
-                canvas = document.createElement('canvas');
-            }
-            
-            try {
-                const ctx = canvas.getContext('2d');
-                canvas.width = camera.videoWidth;
-                canvas.height = camera.videoHeight;
-                
-                // Disegna il frame corrente del video
-                ctx.drawImage(camera, 0, 0);
-                
-                // Interrompi lo stream subito dopo lo scatto
-                stopCamera();
-                
-                // Converti in blob e analizza
-                canvas.toBlob(blob => {
-                    if (blob && blob.size > 0) {
-                        analyzeImage(blob);
-                    } else {
-                        showError('❌ Errore nella cattura della foto. Riprova.');
-                    }
-                }, 'image/jpeg', 0.95);
-            } catch (err) {
-                showError('❌ Errore durante lo scatto: ' + err.message);
-                console.error('Capture error:', err);
-            }
-        }
 
         function handleFileUpload(e) {
             const file = e.target.files[0];
-            if (file) {
-                stopCamera();
-                if (file.type.startsWith('image/')) {
-                    analyzeImage(file);
-                } else {
-                    showError('❌ File non supportato. Seleziona un\'immagine (JPG, PNG, ecc.)');
-                }
+            if (file && file.type.startsWith('image/')) {
+                analyzeImage(file);
+            } else if (file) {
+                showError('❌ File non supportato. Seleziona un\'immagine (JPG, PNG, ecc.)');
             }
         }
 
