@@ -541,8 +541,13 @@
                 });
                 camera.srcObject = stream;
                 camera.style.display = 'block';
-                camera.play();
-                cameraControls.classList.add('active');
+                
+                // Attendi che il video sia pronto
+                camera.onloadedmetadata = () => {
+                    camera.play();
+                    cameraControls.classList.add('active');
+                };
+                
                 preview.style.display = 'none';
                 errorMessage.classList.remove('show');
                 hideResult();
@@ -577,18 +582,34 @@
         }
 
         function capturePhoto() {
+            // Verifiche di sicurezza
+            if (!camera || !camera.videoWidth || !camera.videoHeight) {
+                showError('Errore: Fotocamera non pronta. Riprova.');
+                return;
+            }
+
             if (!canvas) {
                 canvas = document.createElement('canvas');
             }
+            
             const ctx = canvas.getContext('2d');
             canvas.width = camera.videoWidth;
             canvas.height = camera.videoHeight;
+            
+            // Disegna il frame corrente del video
             ctx.drawImage(camera, 0, 0);
             
+            // Interrompi lo stream prima di processare
+            stopCamera();
+            
+            // Converti in blob e analizza
             canvas.toBlob(blob => {
-                stopCamera();
-                analyzeImage(blob);
-            });
+                if (blob) {
+                    analyzeImage(blob);
+                } else {
+                    showError('Errore nella cattura della foto. Riprova.');
+                }
+            }, 'image/jpeg', 0.9);
         }
 
         function handleFileUpload(e) {
