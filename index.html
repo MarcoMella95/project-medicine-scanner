@@ -255,6 +255,9 @@
             font-size: 13px;
             margin-bottom: 16px;
             display: none;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         .error-message.show {
@@ -507,8 +510,22 @@
                 errorMessage.classList.remove('show');
                 hideResult();
             } catch (err) {
-                showError('Impossibile accedere alla fotocamera. Verificare i permessi.');
                 console.error('Camera error:', err);
+                
+                let errorMsg = 'Impossibile accedere alla fotocamera.';
+                
+                if (err.name === 'NotAllowedError') {
+                    errorMsg = '❌ PERMESSI NEGATI: Devi consentire l\'accesso alla fotocamera.\n\n';
+                    errorMsg += '📱 SU ANDROID: Vai in Impostazioni > App > [nome browser] > Autorizzazioni > Fotocamera > Attiva\n\n';
+                    errorMsg += '📱 SU iOS: Vai in Impostazioni > Privacy > Fotocamera e abilita il browser\n\n';
+                    errorMsg += 'Dopo aver abilitato, ricarica la pagina e riprova.';
+                } else if (err.name === 'NotFoundError' || err.name === 'NotSupportedError') {
+                    errorMsg = '⚠️ FOTOCAMERA NON DISPONIBILE: Il tuo dispositivo potrebbe non avere una fotocamera.\n\nUsa il pulsante "Carica Foto" per selezionare un\'immagine dalla galleria.';
+                } else if (err.name === 'PermissionDeniedError') {
+                    errorMsg = '❌ PERMESSI NEGATI PERMANENTEMENTE: Devi ripristinare i permessi nelle impostazioni del tuo dispositivo.';
+                }
+                
+                showError(errorMsg);
             }
         }
 
@@ -611,7 +628,7 @@
         }
 
         function showError(message) {
-            errorMessage.textContent = message;
+            errorMessage.innerHTML = '<strong>⚠️ Errore:</strong><br>' + message.replace(/\n/g, '<br>');
             errorMessage.classList.add('show');
         }
     </script>
